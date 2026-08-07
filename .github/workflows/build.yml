@@ -3,40 +3,42 @@ name: Build IPA
 on:
   push:
     branches: [main]
-  workflow_dispatch:  # кнопка "Run workflow" в разделе Actions
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-14
     env:
+      PROJECT_DIR: ios
       SCHEME: QGram
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app
-
-      # Проект собирается генератором из файлов — регенерируем на всякий случай
-      - name: Generate Xcode project
+      - name: Select latest Xcode
         run: |
-          PROJ_DIR="$(dirname "$(find . -name generate_xcodeproj.py | head -1)")"
-          cd "$PROJ_DIR/.."
-          python3 scripts/generate_xcodeproj.py
+          LATEST="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          echo "Using $LATEST"
+          sudo xcode-select -s "$LATEST"
+          xcodebuild -version
 
-      - name: Locate project
-        id: proj
-        run: echo "dir=$(dirname "$(find . -name '*.xcodeproj' | head -1)")" >> "$GITHUB_OUTPUT"
+      - name: Generate Xcode project
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: python3 scripts/generate_xcodeproj.py
 
       - name: Build archive (unsigned)
-        working-directory: ${{ steps.proj.outputs.dir }}
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           xcodebuild -project QGram.xcodeproj \
             -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/QGram.xcarchive" \
             archive \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES
 
       - name: Package .ipa
@@ -52,4 +54,4 @@ jobs:
         with:
           name: QGram-unsigned-ipa
           path: ${{ runner.temp }}/QGram-unsigned.ipa
-          if-no-found: error
+          if-no-files-found: error
